@@ -13,7 +13,6 @@ pub mod hello {
     pub fn init_house(ctx: Context<InitHouse>, bump: u8) -> ProgramResult {
         // Debit from_account and credit to_account
         let user = &mut ctx.accounts.user;
-        let user_address = *user.to_account_info().key;
         let system_program = &ctx.accounts.system_program;
         let base_account = &ctx.accounts.base_account;
         invoke(
