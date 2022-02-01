@@ -15,6 +15,11 @@ pub mod hello {
         let user = &mut ctx.accounts.user;
         let system_program = &ctx.accounts.system_program;
         let base_account = &ctx.accounts.base_account;
+        msg!("Base account");
+        msg!(&base_account.to_account_info().owner.to_string());
+        msg!("User account");
+        msg!(&user.to_account_info().owner.to_string());
+
         invoke(
             &system_instruction::transfer(
                 &user.to_account_info().key,
