@@ -9,6 +9,7 @@ describe('hello', () => {
   // Configure the client to use the local cluster.
   anchor.setProvider(anchor.Provider.env());
   const program = anchor.workspace.Hello as Program<Hello>;
+  console.log("program.programId", program.programId)
 
   it('Is initialized!', async () => {
     // Add your test here.
@@ -28,5 +29,14 @@ describe('hello', () => {
         systemProgram: SystemProgram.programId,
       },
     });
+    console.log("init tx", initTx)
+    const gambleTx = await program.rpc.gamble({
+      accounts: {
+        baseAccount: pda,
+        user: provider.wallet.publicKey,
+        systemProgram: SystemProgram.programId,
+      },
+    });
+    console.log("gamble", gambleTx)
   });
 });

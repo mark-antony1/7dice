@@ -1,7 +1,7 @@
 [features]
 seeds = false
 [programs.localnet]
-hello = "DBhPne1rBZNjSMVvPM6gkUzMH486vSZVxoSomzQmaqkq"
+hello = "GJmxJGYZETm142yHTQVasceWxWSVzC1Zi86UrCEpgrhK"
 
 [registry]
 url = "https://anchor.projectserum.com"
@@ -12,3 +12,6 @@ wallet = "/Users/jchri/.config/solana/id.json"
 
 [scripts]
 test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
+
+[test]
+startup_wait = 10000
