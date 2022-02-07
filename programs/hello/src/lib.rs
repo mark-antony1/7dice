@@ -5,6 +5,8 @@ use solana_program::{
     account_info::AccountInfo,
     entrypoint::ProgramResult, program::invoke, system_instruction,
 };
+pub use switchboard_program::VrfAccount;
+const MAX_VALUE: u64 = 100;
 
 declare_id!("GJmxJGYZETm142yHTQVasceWxWSVzC1Zi86UrCEpgrhK");
 
@@ -30,7 +32,9 @@ pub mod hello {
         )?;
         Ok(())
     }
-    pub fn gamble(ctx: Context<Gamble>) -> ProgramResult {
+
+    // pub fn your_ix_function<'a, 'b, 'c, 'info>(ctx: Context<'a, 'b, 'c, 'info, YourAccountsThing<'info>>, ...)
+    pub fn gamble<'a, 'b, 'c, 'info>(ctx: Context<'a, 'b, 'c, 'info, Gamble<'info>>) -> ProgramResult {
         // Debit from_account and credit to_account
         let user = &mut ctx.accounts.user;
         let system_program = &ctx.accounts.system_program;
@@ -47,8 +51,11 @@ pub mod hello {
                 system_program.to_account_info().clone(),
             ],
         )?;
-        let clock = Clock::get()?;
-        let random_number = clock.unix_timestamp%100;
+        let vrf_account = &ctx.accounts.vrf_account;
+
+        let vrf = VrfAccount::new(vrf_account)?.get_verified_randomness()?;
+        let value: &[u64] = bytemuck::cast_slice(&vrf[..]);
+        let random_number = value[0] % MAX_VALUE;
         if random_number < 50 {
             **base_account.to_account_info().try_borrow_mut_lamports()? -= 200_000; // 0.002 SOL
             **user.to_account_info().try_borrow_mut_lamports()? += 200_000; // 0.002 SOL
@@ -58,18 +65,19 @@ pub mod hello {
 }
 
 #[derive(Accounts)]
-#[instruction(bump: u8)]
-pub struct InitHouse<'info> {
-    #[account(init, payer = user, space = 9000, seeds = [], bump = bump)]
+pub struct Gamble<'info> {
+    #[account(mut)]
     pub base_account: Account<'info, BaseAccount>,
+    pub vrf_account: AccountInfo<'info>,
     #[account(mut)]
     pub user: Signer<'info>,
     pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
-pub struct Gamble<'info> {
-    #[account(mut)]
+#[instruction(bump: u8)]
+pub struct InitHouse<'info> {
+    #[account(init, payer = user, space = 9000, seeds = [], bump = bump)]
     pub base_account: Account<'info, BaseAccount>,
     #[account(mut)]
     pub user: Signer<'info>,
