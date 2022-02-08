@@ -19,4 +19,5 @@ default = []
 anchor-lang = "0.20.1"
 solana-program = "1.8.1"
 switchboard-program = "0.2.0"
+switchboard-protos = "0.1.59"
 bytemuck = "1.7.3"

@@ -2,7 +2,7 @@ import * as anchor from '@project-serum/anchor';
 import { Program } from '@project-serum/anchor';
 import { Hello } from '../target/types/hello';
 const { SystemProgram } = anchor.web3;
-import { PublicKey } from "@solana/web3.js";
+import { PublicKey, Keypair } from "@solana/web3.js";
 
 describe('hello', () => {
 
@@ -20,6 +20,9 @@ describe('hello', () => {
       
     let [pda, bump] = await PublicKey.findProgramAddress([], program.programId);
     console.log(pda.toBase58());
+
+    let vrfAddress = new Keypair().publicKey
+    console.log(pda.toBase58());
   
     console.log('initializing house')
     const initTx = await program.rpc.initHouse(bump, {
@@ -33,6 +36,7 @@ describe('hello', () => {
     const gambleTx = await program.rpc.gamble({
       accounts: {
         baseAccount: pda,
+        vrfAccount: vrfAddress,
         user: provider.wallet.publicKey,
         systemProgram: SystemProgram.programId,
       },

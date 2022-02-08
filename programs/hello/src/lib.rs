@@ -34,7 +34,7 @@ pub mod hello {
     }
 
     // pub fn your_ix_function<'a, 'b, 'c, 'info>(ctx: Context<'a, 'b, 'c, 'info, YourAccountsThing<'info>>, ...)
-    pub fn gamble<'a, 'b, 'c, 'info>(ctx: Context<'a, 'b, 'c, 'info, Gamble<'info>>) -> ProgramResult {
+    pub fn gamble<'info>(ctx: Context<Gamble>) -> ProgramResult {
         // Debit from_account and credit to_account
         let user = &mut ctx.accounts.user;
         let system_program = &ctx.accounts.system_program;
@@ -51,15 +51,15 @@ pub mod hello {
                 system_program.to_account_info().clone(),
             ],
         )?;
-        let vrf_account = &ctx.accounts.vrf_account;
+        // let vrf_account = &ctx.accounts.vrf_account;
 
-        let vrf = VrfAccount::new(vrf_account)?.get_verified_randomness()?;
-        let value: &[u64] = bytemuck::cast_slice(&vrf[..]);
-        let random_number = value[0] % MAX_VALUE;
-        if random_number < 50 {
-            **base_account.to_account_info().try_borrow_mut_lamports()? -= 200_000; // 0.002 SOL
-            **user.to_account_info().try_borrow_mut_lamports()? += 200_000; // 0.002 SOL
-        }
+        // let vrf = VrfAccount::new(vrf_account)?.get_verified_randomness()?;
+        // let value: &[u64] = bytemuck::cast_slice(&vrf[..]);
+        // let random_number = value[0] % MAX_VALUE;
+        // if random_number < 50 {
+        //     **base_account.to_account_info().try_borrow_mut_lamports()? -= 200_000; // 0.002 SOL
+        //     **user.to_account_info().try_borrow_mut_lamports()? += 200_000; // 0.002 SOL
+        // }
         Ok(())
     }
 }
@@ -67,7 +67,7 @@ pub mod hello {
 #[derive(Accounts)]
 pub struct Gamble<'info> {
     #[account(mut)]
-    pub base_account: Account<'info, BaseAccount>,
+    pub base_account: AccountInfo<'info>,
     pub vrf_account: AccountInfo<'info>,
     #[account(mut)]
     pub user: Signer<'info>,
@@ -77,8 +77,8 @@ pub struct Gamble<'info> {
 #[derive(Accounts)]
 #[instruction(bump: u8)]
 pub struct InitHouse<'info> {
-    #[account(init, payer = user, space = 9000, seeds = [], bump = bump)]
-    pub base_account: Account<'info, BaseAccount>,
+    #[account(mut)]
+    pub base_account: AccountInfo<'info>,
     #[account(mut)]
     pub user: Signer<'info>,
     pub system_program: Program<'info, System>,

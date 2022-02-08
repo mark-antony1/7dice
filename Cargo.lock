@@ -575,6 +575,7 @@ dependencies = [
  "bytemuck",
  "solana-program",
  "switchboard-program",
+ "switchboard-protos",
 ]
 
 [[package]]
