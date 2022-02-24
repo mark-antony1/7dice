@@ -1,13 +1,13 @@
 [features]
 seeds = false
-[programs.localnet]
+[programs.devnet]
 hello = "GJmxJGYZETm142yHTQVasceWxWSVzC1Zi86UrCEpgrhK"
 
 [registry]
 url = "https://anchor.projectserum.com"
 
 [provider]
-cluster = "localnet"
+cluster = "devnet"
 wallet = "/Users/jchri/.config/solana/id.json"
 
 [scripts]
