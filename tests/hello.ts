@@ -7,7 +7,7 @@ import path from "node:path";
 const { SystemProgram } = anchor.web3;
 import { Cluster, Connection, Keypair, PublicKey, SYSVAR_RECENT_BLOCKHASHES_PUBKEY, clusterApiUrl } from "@solana/web3.js";
 import {
-  Callback
+  Callback,
   SBV2_DEVNET_PID,
   SBV2_MAINNET_PID,
   SwitchboardPermissionValue,
@@ -19,34 +19,48 @@ import {
 
 describe('hello', () => {
   // Configure the client to use the local cluster.
-  anchor.setProvider(anchor.Provider.env());
+  const provider = anchor.Provider.env();
+  anchor.setProvider(provider);
   const program = anchor.workspace.Hello as anchor.Program<Hello>;
 
-  it('Is initialized!', async () => {
+  const connection = new Connection(clusterApiUrl('devnet'), 'confirmed')
+  const vrfKey = '8yFdD7qLRrFuzED2mvPDAj5G1opyWjJhdStESbex67pM'
+
+
+  it('Is initialized!', async () => {    
+    const nodeWallet = new NodeWallet(connection, provider.wallet as anchor.Wallet)
+
+    const newFundedWallet = await nodeWallet.createFundedWallet(3705000)
+
+    let [houseVaultPda, houseVaultBump] = await PublicKey.findProgramAddress([], program.programId);
+    let [houseStatePda, houseStateBump] = await PublicKey.findProgramAddress([Buffer.from('house-state')], program.programId);
+  
+    const initTx = await program.rpc.initHouse(houseStateBump, {
+      accounts: {
+        houseVault: houseVaultPda,
+        houseState: houseStatePda,
+        user: newFundedWallet.publicKey,
+        systemProgram: SystemProgram.programId,
+        vrf: new PublicKey(vrfKey)
+      },
+      signers: [newFundedWallet]
+    });
+  })
+
+
+  it('Gambles properly!', async () => {
     // Add your test here.
     console.log("🚀 Starting test...")
+    
 
-    const provider = anchor.Provider.env();
-    anchor.setProvider(provider);  
-      
-    let [houseVaultPda, houseVaultBump] = await PublicKey.findProgramAddress([], program.programId);
-
-    const connection = new Connection(clusterApiUrl('devnet'), 'confirmed')
+  let [houseVaultPda, houseVaultBump] = await PublicKey.findProgramAddress([], program.programId);
+  let [houseStatePda, houseStateBump] = await PublicKey.findProgramAddress([Buffer.from('house-state')], program.programId);
 
     const nodeWallet = new NodeWallet(connection, provider.wallet as anchor.Wallet)
     const newFundedWallet = await nodeWallet.createFundedWallet(1105000)
     const vrfSecret = anchor.web3.Keypair.generate()
-    const initTx = await program.rpc.initHouse(houseVaultBump, {
-      accounts: {
-        houseVault: houseVaultPda,
-        user: newFundedWallet.publicKey,
-        systemProgram: SystemProgram.programId,
-      },
-      signers: [newFundedWallet]
-    });
 
     const cluster = 'devnet'
-    const vrfKey = '8yFdD7qLRrFuzED2mvPDAj5G1opyWjJhdStESbex67pM'
 
     const vrfPubkey = new PublicKey(vrfKey);
     const switchboardProgram = await loadSwitchboardProgram(provider, cluster);
@@ -87,7 +101,7 @@ describe('hello', () => {
       authority: houseVaultPda,
       keypair: vrfSecret,
     });
-    
+
     const vrf = await vrfAccount.loadData();
     const queueAuthority = queue.authority;
     const dataBuffer = queue.dataBuffer;
@@ -119,6 +133,7 @@ describe('hello', () => {
         permissionBump: permissionBump,
         stateBump: programStateBump,
         houseVaultBump: houseVaultBump,
+        houseStateBump: houseStateBump
       },
       {
         accounts: {
@@ -128,6 +143,7 @@ describe('hello', () => {
           authority: vrf.authority,
           houseVault: houseVaultPda,
           dataBuffer,
+          houseState: houseStatePda,
           escrow,
           oracleQueue: vrf.oracleQueue,
           permission: new anchor.web3.PublicKey("9AuCqRVXeTPViWiPyzB2uVBRQdaDuGDyb9yy18Tyd3HY"),
