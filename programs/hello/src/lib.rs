@@ -8,7 +8,7 @@ use solana_program::{
 };
 pub use switchboard_v2::{VrfAccountData, VrfRequestRandomness};
 const MAX_VALUE: u64 = 100;
-// const ZERO_ADDRESS: Pubkey = Pubkey::new(&[0;32]);
+const ZERO_ADDRESS: Pubkey = Pubkey::new_from_array([0; 32]);
 
 declare_id!("GJmxJGYZETm142yHTQVasceWxWSVzC1Zi86UrCEpgrhK");
 
@@ -47,9 +47,8 @@ pub mod hello {
         let user = &mut ctx.accounts.user;
         let system_program = &ctx.accounts.system_program;
         let house_vault = &ctx.accounts.house_vault;
-        let zero = Pubkey::new(&[0;32]);
 
-        if ctx.accounts.house_state.reward_address == zero {
+        if ctx.accounts.house_state.reward_address == ZERO_ADDRESS {
             return Err(ErrorCode::MaxResultExceedsMaximum.into());
         }
 
