@@ -14,10 +14,11 @@ declare_id!("GJmxJGYZETm142yHTQVasceWxWSVzC1Zi86UrCEpgrhK");
 
 #[program]
 pub mod hello {
+    use switchboard_protos::protos::vrf;
+
     use super::*;
     pub fn init_house(ctx: Context<InitHouse>, bump: u8) -> ProgramResult {
         // Debit from_account and credit to_account
-        msg!("initting house");
         let user = &mut ctx.accounts.user;
         let system_program = &ctx.accounts.system_program;
         let house_vault = &ctx.accounts.house_vault;
@@ -97,50 +98,40 @@ pub mod hello {
         Ok(())
     }
 
-    // pub fn settle_gamble(ctx: Context<Gamble>, _params: RequestResultParams) -> ProgramResult {
+    pub fn settle_gamble(ctx: Context<SettleGamble>) -> ProgramResult {
         // Debit from_account and credit to_account
-        // msg!("in gamble");
+        msg!("in gamble");
         // let user = &mut ctx.accounts.user;
-        // let system_program = &ctx.accounts.system_program;
-        // let house_vault = &ctx.accounts.house_vault;
-        // invoke(
-        //     &system_instruction::transfer(
-        //         &user.to_account_info().key,
-        //         &house_vault.to_account_info().key,
-        //         100_000, // 0.001 SOL
-        //     ),
-        //     &[
-        //         user.to_account_info().clone(),
-        //         house_vault.to_account_info().clone(),
-        //         system_program.to_account_info().clone(),
-        //     ],
-        // )?;
+        let system_program = &ctx.accounts.system_program;
+        let house_vault = &ctx.accounts.house_vault;
+        let vrf_account_info = &ctx.accounts.vrf;
+        let vrf_data = VrfAccountData::new(vrf_account_info)?;
+        let result_buffer = vrf_data.get_result()?;
+        // how to convert result_buffer to a number
+        // let result_as_number = fresult_buffer
+        // modulo number by 100
+        // check if number is greater than 49
+        // if so send user money
+        // if not do nothing
+        let house_state = &mut ctx.accounts.house_state;
 
-        // let switchboard_program = ctx.accounts.switchboard_program.to_account_info();
+        invoke(
+            &system_instruction::transfer(
+                &house_vault.to_account_info().key,
+                &ctx.accounts.house_state.reward_address,
+                100_000, // 0.001 SOL
+            ),
+            &[
+                // why is to account info unavailable? How to convert to account info?
+                ctx.accounts.house_state.reward_address.to_account_info().clone(),
+                house_vault.to_account_info().clone(),
+                system_program.to_account_info().clone(),
+            ],
+        )?;
 
-        // let vrf_request_randomness = VrfRequestRandomness {
-        //     authority: ctx.accounts.authority.to_account_info(),
-        //     vrf: ctx.accounts.vrf.to_account_info(),
-        //     oracle_queue: ctx.accounts.oracle_queue.to_account_info(),
-        //     queue_authority: ctx.accounts.queue_authority.to_account_info(),
-        //     data_buffer: ctx.accounts.data_buffer.to_account_info(),
-        //     permission: ctx.accounts.permission.to_account_info(),
-        //     escrow: ctx.accounts.escrow.to_account_info(),
-        //     payer_wallet: ctx.accounts.user.to_account_info(),
-        //     payer_authority: ctx.accounts.user.to_account_info(),
-        //     recent_blockhashes: ctx.accounts.recent_blockhashes.to_account_info(),
-        //     program_state: ctx.accounts.program_state.to_account_info(),
-        //     token_program: ctx.accounts.token_program.to_account_info(),
-        // };
-
-        // msg!("requesting randomness");
-        // vrf_request_randomness.invoke(
-        //     switchboard_program,
-        //     _params.state_bump,
-        //     _params.permission_bump,
-        // )?;
-    //     Ok(())
-    // }
+        house_state.reward_address = Pubkey::new(&[0;32]);
+        Ok(())
+    }
 }
 
 #[derive(Clone, AnchorSerialize, AnchorDeserialize)]
@@ -156,7 +147,7 @@ pub struct RequestResultParams {
 pub struct Gamble<'info> {
     #[account(
         mut,
-        seeds=[b"house_state"],
+        seeds=[b"house-state"],
         bump=bumps.house_state_bump,
         constraint =(house_state.vrf_account ==  vrf.key())
     )]
@@ -219,23 +210,35 @@ pub struct InitHouse<'info> {
     pub system_program: Program<'info, System>,
 }
 
+/// How can the caller sign for the house vault so the settle gamble function can pay out a winner?
+/// How Can I pass bumps into the invoke method? It looks like it just takes
+/// a state_bump and a permission_bump
 #[derive(Accounts)]
 #[instruction(bump: u8)]
 pub struct SettleGamble<'info> {
     #[account(mut)]
     pub vrf: AccountInfo<'info>,
+    #[account(mut)]
+    pub state: Account<'info, VrfState>,
     #[account(
-        init,
-        seeds=[b"house_state"],
+        mut,
+        seeds=[b"house-state"],
         bump=bump,
-        payer=user
     )]
     pub house_state: Account<'info, HouseState>,
     #[account(mut)]
     pub house_vault: UncheckedAccount<'info>,
-    #[account(mut)]
-    pub user: Signer<'info>,
     pub system_program: Program<'info, System>,
+}
+
+#[account]
+pub struct VrfState {
+    pub authority: Pubkey,
+    pub max_result: u64,
+    pub vrf_account: Pubkey,
+    pub result_buffer: [u8; 32],
+    pub result: u128,
+    pub last_timestamp: i64,
 }
 
 
