@@ -1,7 +1,6 @@
 use std::thread::AccessError;
-
-use anchor_spl::token::TokenAccount;
 use anchor_lang::prelude::*;
+use anchor_spl::token::{TokenAccount, Transfer};
 // use anchor_spl::token;
 use solana_program;
 use solana_program::{
@@ -15,10 +14,27 @@ const ZERO_ADDRESS: Pubkey = Pubkey::new_from_array([0; 32]);
 
 declare_id!("GJmxJGYZETm142yHTQVasceWxWSVzC1Zi86UrCEpgrhK");
 
+pub fn transfer<'a>(
+    token_program: &AccountInfo<'a>,
+    from: &Account<'a, TokenAccount>,
+    to: &Account<'a, TokenAccount>,
+    authority: &AccountInfo<'a>,
+    auth_seed: &[&[&[u8]]],
+    amount: u64,
+) -> ProgramResult {
+    let cpi_program = token_program.clone();
+    let cpi_accounts = Transfer {
+        from: from.to_account_info(),
+        to: to.to_account_info(),
+        authority: authority.clone(),
+    };
+    let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, auth_seed);
+    anchor_spl::token::transfer(cpi_ctx, amount)?;
+    Ok(())
+}
+
 #[program]
 pub mod hello {
-    use switchboard_protos::protos::vrf;
-
     use super::*;
     pub fn init_house(ctx: Context<InitHouse>, _bump: u8, vault_name: String) -> ProgramResult {
         // Debit from_account and credit to_account
@@ -28,6 +44,7 @@ pub mod hello {
 
         let house_state = &mut ctx.accounts.house_state;
         house_state.vrf_account = ctx.accounts.vrf.key.clone();
+        house_state.reward_address = ZERO_ADDRESS;
 
         invoke(
             &system_instruction::transfer(
@@ -44,64 +61,81 @@ pub mod hello {
         Ok(())
     }
 
-    pub fn gamble(ctx: Context<Gamble>, _params: RequestResultParams) -> ProgramResult {
+    pub fn gamble(ctx: Context<Gamble>, _params: RequestResultParams, vault_name: String) -> ProgramResult {
         // Debit from_account and credit to_account
         msg!("in gamble");
         let user = &mut ctx.accounts.user;
         let system_program = &ctx.accounts.system_program;
         let house_vault = &ctx.accounts.house_vault;
 
-        if ctx.accounts.house_state.reward_address == ZERO_ADDRESS {
+        if ctx.accounts.house_state.reward_address != ZERO_ADDRESS {
             return Err(ErrorCode::MaxResultExceedsMaximum.into());
         }
 
-        invoke(
-            &system_instruction::transfer(
-                &user.to_account_info().key,
-                &house_vault.to_account_info().key,
-                100_000, // 0.001 SOL
-            ),
-            &[
-                user.to_account_info().clone(),
-                house_vault.to_account_info().clone(),
-                system_program.to_account_info().clone(),
-            ],
-        )?;
+        {
+            invoke(
+                &system_instruction::transfer(
+                    &user.to_account_info().key,
+                    &house_vault.to_account_info().key,
+                    100_000, // 0.001 SOL
+                ),
+                &[
+                    user.to_account_info().clone(),
+                    house_vault.to_account_info().clone(),
+                    system_program.to_account_info().clone(),
+                ],
+            )?;
+        }
 
-        let switchboard_program = ctx.accounts.switchboard_program.to_account_info();
+        {
+            msg!("invoked transfer");
+            transfer(
+                &ctx.accounts.token_program,
+                &ctx.accounts.user_ata, 
+                &ctx.accounts.house_vault,
+                &ctx.accounts.user,
+                &[],
+                100_000_000
+            )?;
+        }
 
-        
-        let vrf_request_randomness = VrfRequestRandomness {
-            authority: ctx.accounts.house_state.to_account_info(),
-            vrf: ctx.accounts.vrf.to_account_info(),
-            oracle_queue: ctx.accounts.oracle_queue.to_account_info(),
-            queue_authority: ctx.accounts.queue_authority.to_account_info(),
-            data_buffer: ctx.accounts.data_buffer.to_account_info(),
-            permission: ctx.accounts.permission.to_account_info(),
-            escrow: ctx.accounts.escrow.clone(),
-            payer_wallet: ctx.accounts.house_vault.clone(),
-            payer_authority: ctx.accounts.house_state.to_account_info(),
-            recent_blockhashes: ctx.accounts.recent_blockhashes.to_account_info(),
-            program_state: ctx.accounts.program_state.to_account_info(),
-            token_program: ctx.accounts.token_program.to_account_info(),
-        };
+        {
+            let switchboard_program = ctx.accounts.switchboard_program.to_account_info();
+
+            
+            let vrf_request_randomness = VrfRequestRandomness {
+                authority: ctx.accounts.house_state.to_account_info(),
+                vrf: ctx.accounts.vrf.to_account_info(),
+                oracle_queue: ctx.accounts.oracle_queue.to_account_info(),
+                queue_authority: ctx.accounts.queue_authority.to_account_info(),
+                data_buffer: ctx.accounts.data_buffer.to_account_info(),
+                permission: ctx.accounts.permission.to_account_info(),
+                escrow: ctx.accounts.escrow.clone(),
+                payer_wallet: ctx.accounts.house_vault.clone(),
+                payer_authority: ctx.accounts.house_state.to_account_info(),
+                recent_blockhashes: ctx.accounts.recent_blockhashes.to_account_info(),
+                program_state: ctx.accounts.program_state.to_account_info(),
+                token_program: ctx.accounts.token_program.to_account_info(),
+            };
+
+            msg!("requesting randomness {} {} {}", ctx.accounts.vrf.key, ctx.accounts.permission.key, ctx.accounts.oracle_queue.key );
+            let state_seeds: &[&[&[u8]]] = &[&[
+                &vault_name.as_bytes(),
+                &[_params.house_state_bump],
+            ]];
+            vrf_request_randomness.invoke_signed(
+                switchboard_program,
+                _params.state_bump,
+                _params.permission_bump,
+                state_seeds
+            )?;
+        }
+
         let vrf = VrfAccountData::new(&ctx.accounts.vrf)?;
         let next_counter = vrf.counter + 1;
         let house_state = &mut ctx.accounts.house_state;
         house_state.vrf_counter = next_counter as u64;
         house_state.reward_address = ctx.accounts.user.key.clone();
-
-        msg!("requesting randomness");
-        // let state_seeds: &[&[&[u8]]] = &[&[
-        //     &b"house-seeds",
-        //     &[_params.client_state_bump],
-        // ]];
-        vrf_request_randomness.invoke(
-            switchboard_program,
-            _params.state_bump,
-            _params.permission_bump,
-            // seeds: [state_seeds]
-        )?;
         Ok(())
     }
 
@@ -149,23 +183,22 @@ pub struct RequestResultParams {
 }
 
 #[derive(Accounts)]
-#[instruction(bumps: RequestResultParams)]
+#[instruction(bumps: RequestResultParams, vault_name: String)]
 pub struct Gamble<'info> {
     #[account(
         mut,
-        seeds=[b"house-state"],
+        seeds=[vault_name.as_bytes()],
         bump=bumps.house_state_bump,
-        constraint =(house_state.vrf_account ==  vrf.key())
+        // constraint =house_state.vrf_account.as_ref().strip() ==  vrf.key()
     )]
-    pub house_state: Account<'info, HouseState>,
+    pub house_state: Box<Account<'info, HouseState>>,
     #[account(mut)]
     pub house_vault: Account<'info, TokenAccount>,
-    #[account(mut)]
-    pub user: Signer<'info>,
-    pub system_program: Program<'info, System>,
+    // switchboard accounts
     pub switchboard_program: AccountInfo<'info>,
     #[account(mut)]
     pub authority: AccountInfo<'info>,
+    pub program_state: AccountInfo<'info>,
     #[account(mut)]
     pub vrf: AccountInfo<'info>,
     #[account(mut)]
@@ -174,15 +207,20 @@ pub struct Gamble<'info> {
     pub data_buffer: AccountInfo<'info>,
     #[account(mut)]
     pub permission: AccountInfo<'info>,
+    // user accounts    
+    #[account(mut)]
+    pub user: Signer<'info>,    
+    #[account(mut)]
+    pub user_ata: Box<Account<'info, TokenAccount>>,
     #[account(mut)]
     pub escrow: Account<'info, TokenAccount>,
     #[account(mut)]
     pub payer_authority: AccountInfo<'info>,
     #[account(address = solana_program::sysvar::recent_blockhashes::ID)]
     pub recent_blockhashes: AccountInfo<'info>,
-    pub program_state: AccountInfo<'info>,
     #[account(address = anchor_spl::token::ID)]
     pub token_program: AccountInfo<'info>,
+    pub system_program: Program<'info, System>,
 }
 
 impl Default for HouseState {

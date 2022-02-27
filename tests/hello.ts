@@ -29,13 +29,10 @@ describe('hello', () => {
   let house_escrow
 
   it('Is initialized!', async () => {  
-    console.log('in initializd')  
     const nodeWallet = new NodeWallet(provider.connection, provider.wallet as anchor.Wallet)
     const newFundedWallet = await nodeWallet.createFundedWallet(13705000)
     
-    console.log("after airdrop")
     let [houseStatePda, houseStateBump] = await PublicKey.findProgramAddress([Buffer.from(vaultName)], program.programId);
-
     const wrappedSolMint = new Token(
       program.provider.connection,
       new anchor.web3.PublicKey("So11111111111111111111111111111111111111112"),
@@ -44,8 +41,6 @@ describe('hello', () => {
     );
     const vaultKeypair = anchor.web3.Keypair.generate();
 
-
-    console.log("create wrapped native token")
     const house_vault = await spl.Token.createWrappedNativeAccount(
       provider.connection,
       spl.TOKEN_PROGRAM_ID,
@@ -54,8 +49,6 @@ describe('hello', () => {
       1,
     );
     house_escrow = house_vault;
-
-    console.log("set authoritys")
 
     await wrappedSolMint.setAuthority(
       house_escrow,
@@ -87,15 +80,14 @@ describe('hello', () => {
     
 
   let [houseAuthorityPda, houseAuthorityBump] = await PublicKey.findProgramAddress([], program.programId);
-  let [houseStatePda, houseStateBump] = await PublicKey.findProgramAddress([Buffer.from('house-state')], program.programId);
+  let [houseStatePda, houseStateBump] = await PublicKey.findProgramAddress([Buffer.from(vaultName)], program.programId);
 
     const nodeWallet = new NodeWallet(provider.connection, provider.wallet as anchor.Wallet)
-    const newFundedWallet = await nodeWallet.createFundedWallet(1105000)
+    const newFundedWallet = await nodeWallet.createFundedWallet(134_905_000)
     const vrfSecret = anchor.web3.Keypair.generate()
 
     const cluster = 'devnet'
 
-    const vrfPubkey = new PublicKey(vrfKey);
     const switchboardProgram = await loadSwitchboardProgram(provider, cluster);
 
     const queueAccount = new OracleQueueAccount({
@@ -141,19 +133,28 @@ describe('hello', () => {
     const escrow = vrf.escrow;
     const [programStateAccount, programStateBump] =
       ProgramStateAccount.fromSeed(switchboardProgram);
-    const [permissionAccount, permissionBump] = PermissionAccount.fromSeed(
-      switchboardProgram,
-      queueAuthority,
-      queueAccount.publicKey,
-      vrfPubkey
-    );
+    console.log(`authority ${queueAuthority}\ngrantee: ${queueAccount.publicKey}\ngranter: ${vrfAccount.publicKey}`);
+    const createdPermissionAccount = await PermissionAccount.create(switchboardProgram, {
+      authority: queueAuthority, 
+      granter: queueAccount.publicKey, 
+      grantee: vrfAccount.publicKey
+    });
     try {
-      await permissionAccount.loadData();
+      await createdPermissionAccount.loadData();
     } catch {
       throw new Error(
         "A requested permission pda account has not been initialized."
       );
     }
+    const [permissionAccount, permissionBump] = PermissionAccount.fromSeed(
+      switchboardProgram,
+      queueAuthority,
+      queueAccount.publicKey,
+      vrfAccount.publicKey
+    );
+
+    console.log("permissionAccount", permissionAccount.publicKey.toString(), 'created permission ', createdPermissionAccount.publicKey.toString())
+
 
     const tokenProgram = TOKEN_PROGRAM_ID;
     const recentBlockhashes = SYSVAR_RECENT_BLOCKHASHES_PUBKEY;
@@ -167,19 +168,21 @@ describe('hello', () => {
       TOKEN_PROGRAM_ID,
       newFundedWallet.publicKey,
       newFundedWallet,
-      1,
+      100_000_001,
     );
 
+    console.log('gambling now')
     const gambleTx = await program.rpc.gamble(
       {
         permissionBump: permissionBump,
         stateBump: programStateBump,
         houseStateBump: houseStateBump
       },
+      vaultName,
       {
         accounts: {
           switchboardProgram: switchboardProgram.programId,
-          vrf: vrfPubkey,
+          vrf: vrfAccount.publicKey,
           queueAuthority,
           authority: vrf.authority,
           houseVault: house_escrow,
@@ -187,9 +190,10 @@ describe('hello', () => {
           houseState: houseStatePda,
           escrow,
           oracleQueue: vrf.oracleQueue,
-          permission: new anchor.web3.PublicKey("9AuCqRVXeTPViWiPyzB2uVBRQdaDuGDyb9yy18Tyd3HY"),
+          permission: createdPermissionAccount.publicKey,
           payerAuthority: houseStatePda,
           user: newFundedWallet.publicKey,
+          userAta: fundedWalletWSolAta,
           recentBlockhashes,
           systemProgram: SystemProgram.programId,
           programState: programStateAccount.publicKey,
