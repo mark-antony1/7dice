@@ -1,5 +1,5 @@
 import * as anchor from '@project-serum/anchor';
-import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { TOKEN_PROGRAM_ID, Token } from "@solana/spl-token";
 import { NodeWallet } from './utils/node-wallet'
 import { Hello } from '../target/types/hello';
 import fs from "node:fs";
@@ -16,6 +16,7 @@ import {
   ProgramStateAccount,
   VrfAccount,
 } from "@switchboard-xyz/switchboard-v2";
+import * as spl from "@solana/spl-token";
 
 describe('hello', () => {
   // Configure the client to use the local cluster.
@@ -23,22 +24,54 @@ describe('hello', () => {
   anchor.setProvider(provider);
   const program = anchor.workspace.Hello as anchor.Program<Hello>;
 
-  const connection = new Connection(clusterApiUrl('devnet'), 'confirmed')
   const vrfKey = '8yFdD7qLRrFuzED2mvPDAj5G1opyWjJhdStESbex67pM'
+  const vaultName = "test_vault_" + Math.random().toString(16).substring(2, 8); // "sol_put_sell";
+  let house_escrow
+
+  it('Is initialized!', async () => {  
+    console.log('in initializd')  
+    const nodeWallet = new NodeWallet(provider.connection, provider.wallet as anchor.Wallet)
+    const newFundedWallet = await nodeWallet.createFundedWallet(13705000)
+    
+    console.log("after airdrop")
+    let [houseStatePda, houseStateBump] = await PublicKey.findProgramAddress([Buffer.from(vaultName)], program.programId);
+
+    const wrappedSolMint = new Token(
+      program.provider.connection,
+      new anchor.web3.PublicKey("So11111111111111111111111111111111111111112"),
+      TOKEN_PROGRAM_ID,
+      newFundedWallet
+    );
+    const vaultKeypair = anchor.web3.Keypair.generate();
 
 
-  it('Is initialized!', async () => {    
-    const nodeWallet = new NodeWallet(connection, provider.wallet as anchor.Wallet)
+    console.log("create wrapped native token")
+    const house_vault = await spl.Token.createWrappedNativeAccount(
+      provider.connection,
+      spl.TOKEN_PROGRAM_ID,
+      newFundedWallet.publicKey,
+      newFundedWallet,
+      1,
+    );
+    house_escrow = house_vault;
 
-    const newFundedWallet = await nodeWallet.createFundedWallet(3705000)
+    console.log("set authoritys")
 
-    let [houseVaultPda, houseVaultBump] = await PublicKey.findProgramAddress([], program.programId);
-    let [houseStatePda, houseStateBump] = await PublicKey.findProgramAddress([Buffer.from('house-state')], program.programId);
-  
-    const initTx = await program.rpc.initHouse(houseStateBump, {
+    await wrappedSolMint.setAuthority(
+      house_escrow,
+      houseStatePda,
+      "AccountOwner",
+      newFundedWallet,
+      []
+    );
+
+    console.log("inithouse")
+    const initTx = await program.rpc.initHouse(
+      houseStateBump, Buffer.from(vaultName), {
       accounts: {
-        houseVault: houseVaultPda,
+        houseAuthority: newFundedWallet.publicKey,
         houseState: houseStatePda,
+        houseVault: house_escrow,
         user: newFundedWallet.publicKey,
         systemProgram: SystemProgram.programId,
         vrf: new PublicKey(vrfKey)
@@ -53,10 +86,10 @@ describe('hello', () => {
     console.log("🚀 Starting test...")
     
 
-  let [houseVaultPda, houseVaultBump] = await PublicKey.findProgramAddress([], program.programId);
+  let [houseAuthorityPda, houseAuthorityBump] = await PublicKey.findProgramAddress([], program.programId);
   let [houseStatePda, houseStateBump] = await PublicKey.findProgramAddress([Buffer.from('house-state')], program.programId);
 
-    const nodeWallet = new NodeWallet(connection, provider.wallet as anchor.Wallet)
+    const nodeWallet = new NodeWallet(provider.connection, provider.wallet as anchor.Wallet)
     const newFundedWallet = await nodeWallet.createFundedWallet(1105000)
     const vrfSecret = anchor.web3.Keypair.generate()
 
@@ -81,7 +114,7 @@ describe('hello', () => {
     const [stateAccount, stateBump] = VrfState.fromSeed(
       vrfExampleProgram,
       vrfSecret.publicKey,
-      houseVaultPda
+      houseAuthorityPda
     );
 
     const ixCoder = new anchor.InstructionCoder(vrfExampleProgram.idl);
@@ -98,7 +131,7 @@ describe('hello', () => {
     const vrfAccount = await VrfAccount.create(switchboardProgram, {
       queue: queueAccount,
       callback,
-      authority: houseVaultPda,
+      authority: houseStatePda,
       keypair: vrfSecret,
     });
 
@@ -128,11 +161,19 @@ describe('hello', () => {
       `Sending Txn\nstateBump: ${programStateBump}\npermissionBump: ${permissionBump}`
     );
 
+    console.log("herere create warapped")
+    const fundedWalletWSolAta = await spl.Token.createWrappedNativeAccount(
+      program.provider.connection,
+      TOKEN_PROGRAM_ID,
+      newFundedWallet.publicKey,
+      newFundedWallet,
+      1,
+    );
+
     const gambleTx = await program.rpc.gamble(
       {
         permissionBump: permissionBump,
         stateBump: programStateBump,
-        houseVaultBump: houseVaultBump,
         houseStateBump: houseStateBump
       },
       {
@@ -141,14 +182,13 @@ describe('hello', () => {
           vrf: vrfPubkey,
           queueAuthority,
           authority: vrf.authority,
-          houseVault: houseVaultPda,
+          houseVault: house_escrow,
           dataBuffer,
           houseState: houseStatePda,
           escrow,
           oracleQueue: vrf.oracleQueue,
           permission: new anchor.web3.PublicKey("9AuCqRVXeTPViWiPyzB2uVBRQdaDuGDyb9yy18Tyd3HY"),
-          payerWallet: houseVaultPda,
-          payerAuthority: houseVaultPda,
+          payerAuthority: houseStatePda,
           user: newFundedWallet.publicKey,
           recentBlockhashes,
           systemProgram: SystemProgram.programId,
@@ -230,13 +270,13 @@ export function loadVrfExamplePid(): PublicKey {
 // VRF Example program keypair
 const PROGRAM_KEYPAIR_PATH = path.join(
   __dirname,
-  "../../target/deploy/anchor_vrf_example-keypair.json"
+  "../target/deploy/hello-keypair.json"
 );
 
 // VRF Example program IDL
 const PROGRAM_IDL_PATH = path.join(
   __dirname,
-  "../../target/idl/anchor_vrf_example.json"
+  "../target/idl/hello.json"
 );
 
 

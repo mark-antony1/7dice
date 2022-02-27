@@ -1,3 +1,6 @@
+use std::thread::AccessError;
+
+use anchor_spl::token::TokenAccount;
 use anchor_lang::prelude::*;
 // use anchor_spl::token;
 use solana_program;
@@ -17,7 +20,7 @@ pub mod hello {
     use switchboard_protos::protos::vrf;
 
     use super::*;
-    pub fn init_house(ctx: Context<InitHouse>, bump: u8) -> ProgramResult {
+    pub fn init_house(ctx: Context<InitHouse>, _bump: u8, vault_name: String) -> ProgramResult {
         // Debit from_account and credit to_account
         let user = &mut ctx.accounts.user;
         let system_program = &ctx.accounts.system_program;
@@ -69,15 +72,15 @@ pub mod hello {
 
         
         let vrf_request_randomness = VrfRequestRandomness {
-            authority: ctx.accounts.authority.to_account_info(),
+            authority: ctx.accounts.house_state.to_account_info(),
             vrf: ctx.accounts.vrf.to_account_info(),
             oracle_queue: ctx.accounts.oracle_queue.to_account_info(),
             queue_authority: ctx.accounts.queue_authority.to_account_info(),
             data_buffer: ctx.accounts.data_buffer.to_account_info(),
             permission: ctx.accounts.permission.to_account_info(),
-            escrow: ctx.accounts.escrow.to_account_info(),
-            payer_wallet: ctx.accounts.user.to_account_info(),
-            payer_authority: ctx.accounts.user.to_account_info(),
+            escrow: ctx.accounts.escrow.clone(),
+            payer_wallet: ctx.accounts.house_vault.clone(),
+            payer_authority: ctx.accounts.house_state.to_account_info(),
             recent_blockhashes: ctx.accounts.recent_blockhashes.to_account_info(),
             program_state: ctx.accounts.program_state.to_account_info(),
             token_program: ctx.accounts.token_program.to_account_info(),
@@ -89,10 +92,15 @@ pub mod hello {
         house_state.reward_address = ctx.accounts.user.key.clone();
 
         msg!("requesting randomness");
+        // let state_seeds: &[&[&[u8]]] = &[&[
+        //     &b"house-seeds",
+        //     &[_params.client_state_bump],
+        // ]];
         vrf_request_randomness.invoke(
             switchboard_program,
             _params.state_bump,
             _params.permission_bump,
+            // seeds: [state_seeds]
         )?;
         Ok(())
     }
@@ -114,19 +122,19 @@ pub mod hello {
         // if not do nothing
         let house_state = &mut ctx.accounts.house_state;
 
-        invoke(
-            &system_instruction::transfer(
-                &house_vault.to_account_info().key,
-                &ctx.accounts.house_state.reward_address,
-                100_000, // 0.001 SOL
-            ),
-            &[
-                // why is to account info unavailable? How to convert to account info?
-                ctx.accounts.house_state.reward_address.to_account_info().clone(),
-                house_vault.to_account_info().clone(),
-                system_program.to_account_info().clone(),
-            ],
-        )?;
+        // invoke(
+        //     &system_instruction::transfer(
+        //         &house_vault.to_account_info().key,
+        //         &ctx.accounts.house_state.reward_address,
+        //         100_000, // 0.001 SOL
+        //     ),
+        //     &[
+        //         // why is to account info unavailable? How to convert to account info?
+        //         ctx.accounts.house_state.reward_address.to_account_info(),
+        //         house_vault.to_account_info().clone(),
+        //         system_program.to_account_info().clone(),
+        //     ],
+        // )?;
 
         house_state.reward_address = Pubkey::new(&[0;32]);
         Ok(())
@@ -137,7 +145,6 @@ pub mod hello {
 pub struct RequestResultParams {
     pub permission_bump: u8,
     pub state_bump: u8,
-    pub house_vault_bump: u8,
     pub house_state_bump: u8,
 }
 
@@ -152,7 +159,7 @@ pub struct Gamble<'info> {
     )]
     pub house_state: Account<'info, HouseState>,
     #[account(mut)]
-    pub house_vault: UncheckedAccount<'info>,
+    pub house_vault: Account<'info, TokenAccount>,
     #[account(mut)]
     pub user: Signer<'info>,
     pub system_program: Program<'info, System>,
@@ -168,13 +175,7 @@ pub struct Gamble<'info> {
     #[account(mut)]
     pub permission: AccountInfo<'info>,
     #[account(mut)]
-    pub escrow: AccountInfo<'info>,
-    #[account(
-        mut,
-        seeds = [],
-        bump=bumps.house_vault_bump
-    )]
-    pub payer_wallet: AccountInfo<'info>,
+    pub escrow: Account<'info, TokenAccount>,
     #[account(mut)]
     pub payer_authority: AccountInfo<'info>,
     #[account(address = solana_program::sysvar::recent_blockhashes::ID)]
@@ -191,23 +192,40 @@ impl Default for HouseState {
 }
 
 #[derive(Accounts)]
-#[instruction(bump: u8)]
+#[instruction(bump: u8, vault_name: String)]
 pub struct InitHouse<'info> {
     #[account(mut)]
     pub vrf: AccountInfo<'info>,
     #[account(
         init,
-        seeds=[b"house-state"],
-        bump,
+        seeds=[vault_name.as_bytes()],
+        bump=bump,
         payer=user
     )]
     pub house_state: Account<'info, HouseState>,
     #[account(mut)]
-    pub house_vault: UncheckedAccount<'info>,
+    pub house_vault: Account<'info, TokenAccount>,
+    #[account(mut)]
+    pub house_authority: AccountInfo<'info>,
+    // #[account(
+    //     init,
+    //     seeds=[b"escrow-vault"],
+    //     token::mint = redeemable_mint,
+    //     token::authority = user_authority,
+    //     bump,
+    //     payer=user
+    // )]
+    // pub house_vault: Account<'info, TokenAccount>,
     #[account(mut)]
     pub user: Signer<'info>,
     pub system_program: Program<'info, System>,
 }
+
+// #[derive(Clone, AnchorSerialize, AnchorDeserialize)]
+// pub struct InitHouseBumps {
+//     pub bump: u8,
+//     pub vault_name: [u8;32],
+// }
 
 /// How can the caller sign for the house vault so the settle gamble function can pay out a winner?
 /// How Can I pass bumps into the invoke method? It looks like it just takes
