@@ -8,6 +8,8 @@ use solana_program::{
     account_info::AccountInfo,
     entrypoint::ProgramResult, program::invoke, system_instruction,
 };
+use num_bigint::BigUint;
+
 pub use switchboard_v2::{VrfAccountData, VrfRequestRandomness};
 const MAX_VALUE: u64 = 100;
 const ZERO_ADDRESS: Pubkey = Pubkey::new_from_array([0; 32]);
@@ -139,15 +141,33 @@ pub mod hello {
         Ok(())
     }
 
-    pub fn settle_gamble(ctx: Context<SettleGamble>) -> ProgramResult {
+    pub fn settle_gamble(ctx: Context<SettleGamble>, bump: u8) -> ProgramResult {
         // Debit from_account and credit to_account
-        msg!("in gamble");
-        // let user = &mut ctx.accounts.user;
+        msg!("in settle gamble");
+        let user = &mut ctx.accounts.user;
         let system_program = &ctx.accounts.system_program;
         let house_vault = &ctx.accounts.house_vault;
         let vrf_account_info = &ctx.accounts.vrf;
         let vrf_data = VrfAccountData::new(vrf_account_info)?;
         let result_buffer = vrf_data.get_result()?;
+        // let halfVec::from_iter(data[1..4].iter().cloned());
+        let result = BigUint::from_bytes_be(&result_buffer);
+        let mod_res = result % BigUint::from(2 as u8);
+        if mod_res == BigUint::from(2 as u8) {
+            invoke(
+                &system_instruction::transfer(
+                    &house_vault.to_account_info().key,
+                    &user.to_account_info().key,
+                    100_000, // 0.001 SOL
+                ),
+                &[
+                    user.to_account_info().clone(),
+                    house_vault.to_account_info().clone(),
+                    system_program.to_account_info().clone(),
+                ],
+            )?;
+        }
+
         // how to convert result_buffer to a number
         // let result_as_number = fresult_buffer
         // modulo number by 100
@@ -170,7 +190,7 @@ pub mod hello {
         //     ],
         // )?;
 
-        house_state.reward_address = Pubkey::new(&[0;32]);
+        house_state.reward_address = ZERO_ADDRESS;
         Ok(())
     }
 }
@@ -281,6 +301,8 @@ pub struct SettleGamble<'info> {
         bump=bump,
     )]
     pub house_state: Account<'info, HouseState>,
+    #[account(mut)]
+    pub user: AccountInfo<'info>,    
     #[account(mut)]
     pub house_vault: UncheckedAccount<'info>,
     pub system_program: Program<'info, System>,

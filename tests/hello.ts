@@ -58,7 +58,6 @@ describe('hello', () => {
       []
     );
 
-    console.log("inithouse")
     const initTx = await program.rpc.initHouse(
       houseStateBump, Buffer.from(vaultName), {
       accounts: {
@@ -79,8 +78,9 @@ describe('hello', () => {
     console.log("🚀 Starting test...")
     
 
-  let [houseAuthorityPda, houseAuthorityBump] = await PublicKey.findProgramAddress([], program.programId);
-  let [houseStatePda, houseStateBump] = await PublicKey.findProgramAddress([Buffer.from(vaultName)], program.programId);
+    let [houseAuthorityPda, houseAuthorityBump] = await PublicKey.findProgramAddress([], program.programId);
+    let [houseStatePda, houseStateBump] = await PublicKey.findProgramAddress([Buffer.from(vaultName)], program.programId);
+    console.log("house state", houseStatePda.toString())
 
     const nodeWallet = new NodeWallet(provider.connection, provider.wallet as anchor.Wallet)
     const newFundedWallet = await nodeWallet.createFundedWallet(134_905_000)
@@ -114,8 +114,12 @@ describe('hello', () => {
     const callback: Callback = {
       programId: vrfExampleProgram.programId,
       accounts: [
-        { pubkey: stateAccount.publicKey, isSigner: false, isWritable: true },
+        { pubkey: new PublicKey(vrfKey), isSigner: false, isWritable: true },
         { pubkey: vrfSecret.publicKey, isSigner: false, isWritable: false },
+        { pubkey: houseStatePda, isSigner: true, isWritable: true },
+        { pubkey: newFundedWallet.publicKey, isSigner: true, isWritable: true },
+        { pubkey: house_escrow, isSigner: false, isWritable: true},
+        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false }
       ],
       ixData: ixCoder.encode("settleGamble", ""),
     };
@@ -203,6 +207,12 @@ describe('hello', () => {
       },
     );
     console.log("gamble", gambleTx)
+
+      setTimeout(async () => {
+        const data = await anchor.workspace.Hello.account.houseState.fetch(houseStatePda)
+        console.log("newFundedWallet.publicKey", newFundedWallet.publicKey.toString())
+        console.log("data data", data.rewardAddress.toString())
+      }, 10000)
   });
 });
 
